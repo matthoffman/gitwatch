@@ -22,7 +22,7 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #############################################################################
 #
-#   Idea and original code taken from http://stackoverflow.com/a/965274 
+#   Idea and original code taken from http://stackoverflow.com/a/965274
 #       (but heavily modified by now)
 #
 #   Requires the command 'inotifywait' to be available, which is part of
@@ -31,12 +31,13 @@
 #   Will check the availability of both commands using the `which` command
 #   and will abort if either command (or `which`) is not found.
 #
+set -euo pipefail
 
-REMOTE=""
-BRANCH=""
-SLEEP_TIME=2
+REMOTE="origin"
+BRANCH="master"
+SLEEP_TIME=8
 DATE_FMT="+%Y-%m-%d %H:%M:%S"
-COMMITMSG="Scripted auto-commit on change (%d) by gitwatch.sh"
+COMMITMSG="Auto-commit on change (%d)"
 
 shelp () { # Print a message about how to use this script
     echo "gitwatch - watch file or directory and git commit all changes as they happen"
@@ -93,9 +94,9 @@ stderr () {
     echo $1 >&2
 }
 
-while getopts b:d:hm:p:r:s: option # Process command line options 
-do 
-    case "${option}" in 
+while getopts b:d:hm:p:r:s: option # Process command line options
+do
+    case "${option}" in
         b) BRANCH=${OPTARG};;
         d) DATE_FMT=${OPTARG};;
         h) shelp; exit;;
@@ -117,8 +118,8 @@ is_command () { # Tests for the availability of a command
 }
 
 # if custom bin names are given for git or inotifywait, use those; otherwise fall back to "git" and "inotifywait"
-if [ -z "$GW_GIT_BIN" ]; then GIT="git"; else GIT="$GW_GIT_BIN"; fi
-if [ -z "$GW_INW_BIN" ]; then INW="inotifywait"; else INW="$GW_INW_BIN"; fi
+if [[ -z "${GW_GIT_BIN:-}" ]]; then GIT="git"; else GIT="$GW_GIT_BIN"; fi
+if [[ -z "${GW_INW_BIN:-}" ]]; then INW="inotifywait"; else INW="$GW_INW_BIN"; fi
 
 # Check availability of selected binaries and die if not met
 for cmd in "$GIT" "$INW"; do
@@ -179,6 +180,10 @@ while true; do
     $GIT add $GIT_ADD_ARGS # add file(s) to index
     $GIT commit $GIT_COMMIT_ARGS -m"$FORMATTED_COMMITMSG" # construct commit message and commit
 
-    if [ -n "$PUSH_CMD" ]; then $PUSH_CMD; fi
+
+    if [ -n "$PUSH_CMD" ]; then
+        $GIT pull --rebase # get remote changes and rebase
+        $PUSH_CMD;
+    fi
 done
 
