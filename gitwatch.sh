@@ -171,6 +171,7 @@ fi
 
 # main program loop: wait for changes and commit them
 while true; do
+    $GIT pull -X theirs # initial pull to get current state
     $INCOMMAND # wait for changes
     sleep $SLEEP_TIME # wait some more seconds to give apps time to write out all changes
     if [ -n "$DATE_FMT" ]; then
