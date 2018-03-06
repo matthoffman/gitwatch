@@ -38,6 +38,7 @@ BRANCH="master"
 SLEEP_TIME=8
 DATE_FMT="+%Y-%m-%d %H:%M:%S"
 COMMITMSG="Gitwatch: auto-commit on change (%d)"
+GIT_DIR=""
 
 shelp () { # Print a message about how to use this script
     echo "gitwatch - watch file or directory and git commit all changes as they happen"
@@ -74,6 +75,7 @@ shelp () { # Print a message about how to use this script
     echo "                  (unless the <fmt> specified by -d is empty, in which case %d"
     echo "                  is replaced by an empty string); the default message is:"
     echo "                  \"Gitwatch: auto-commit on change (%d)\""
+    echo " -g <git-dir>     Git directory (Equals to <target>/.git if not specified)"
     echo ""
     echo "As indicated, several conditions are only checked once at launch of the"
     echo "script. You can make changes to the repo state and configurations even while"
@@ -94,7 +96,7 @@ stderr () {
     echo "$1" >&2
 }
 
-while getopts b:d:hm:p:r:s: option # Process command line options
+while getopts b:d:hm:p:r:s:g: option # Process command line options
 do
     case "${option}" in
         b) BRANCH=${OPTARG};;
@@ -103,6 +105,7 @@ do
         m) COMMITMSG=${OPTARG};;
         p|r) REMOTE=${OPTARG};;
         s) SLEEP_TIME=${OPTARG};;
+        g) GIT_DIR=${OPTARG};;
         *) stderr "Error: Invalid option." ; exit 1;
     esac
 done
@@ -146,6 +149,9 @@ else
     exit 1
 fi
 
+if [ -z "$GIT_DIR" ]; then GIT_DIR="$TARGETDIR/.git"; fi
+if [ ! -d "$GIT_DIR" ]; then echo "$GIT_DIR is not a directory"; exit 1; fi
+
 # Check if commit message needs any formatting (date splicing)
 if ! grep "%d" > /dev/null <<< "$COMMITMSG"; then # if commitmsg didnt contain %d, grep returns non-zero
     DATE_FMT="" # empty date format (will disable splicing in the main loop)
@@ -178,9 +184,8 @@ while true; do
         FORMATTED_COMMITMSG="$(sed "s/%d/$(date "$DATE_FMT")/" <<< "$COMMITMSG")" # splice the formatted date-time into the commit message
     fi
     cd "$TARGETDIR" # CD into right dir
-    $GIT add "$GIT_ADD_ARGS" # add file(s) to index
-    $GIT commit $GIT_COMMIT_ARGS -m"$FORMATTED_COMMITMSG" # construct commit message and commit
-
+    $GIT --work-tree "$TARGETDIR" --git-dir "$GIT_DIR" add "$GIT_ADD_ARGS" # add file(s) to index
+    $GIT --work-tree "$TARGETDIR" --git-dir "$GIT_DIR" commit "$GIT_COMMIT_ARGS" -m"$FORMATTED_COMMITMSG" # construct commit message and commit
 
     if [ -n "$PUSH_CMD" ]; then
         $GIT fetch "$REMOTE"
