@@ -159,8 +159,7 @@ if [ -n "$REMOTE" ]; then # are we pushing to a remote?
         PUSH_CMD="$GIT push $REMOTE" # Branch not set, push to remote without a branch
     else
         # check if we are on a detached HEAD
-        HEADREF=$(git symbolic-ref HEAD 2> /dev/null)
-        if [ "$?" -eq 0 ]; then # HEAD is not detached
+        if HEADREF=$(git symbolic-ref HEAD 2> /dev/null); then # HEAD is not detached
             PUSH_CMD="$GIT push $REMOTE $(sed "s_^refs/heads/__" <<< "$HEADREF"):$BRANCH"
         else # HEAD is detached
             PUSH_CMD="$GIT push $REMOTE $BRANCH"
@@ -184,12 +183,12 @@ while true; do
 
 
     if [ -n "$PUSH_CMD" ]; then
-        $GIT fetch $REMOTE
+        $GIT fetch "$REMOTE"
         timestamp=$(date +'%Y-%m-%dT%H:%M:%S%z');
         for file in $(git diff --name-only --diff-filter=U); do
-          $GIT show ":1:${file}" > "${file}.${timestamp}".original
-          $GIT show ":2:${file}" > "${file}.${timestamp}".yours
-          $GIT show ":3:${file}" > "${file}.${timestamp}".theirs
+            $GIT show ":1:${file}" > "${file}.${timestamp}".original
+            $GIT show ":2:${file}" > "${file}.${timestamp}".yours
+            $GIT show ":3:${file}" > "${file}.${timestamp}".theirs
         done
         $PUSH_CMD;
     fi
