@@ -39,13 +39,14 @@ SLEEP_TIME=8
 DATE_FMT="+%Y-%m-%d %H:%M:%S"
 COMMITMSG="Gitwatch: auto-commit on change (%d)"
 GIT_DIR=""
+ENABLE_PULL="false"
 
 shelp () { # Print a message about how to use this script
     echo "gitwatch - watch file or directory and git commit all changes as they happen"
     echo ""
     echo "Usage:"
     echo "${0##*/} [-s <secs>] [-d <fmt>] [-r <remote> [-b <branch>]]"
-    echo "          [-m <msg>] <target>"
+    echo "         [-p] [-m <msg>] <target>"
     echo ""
     echo "Where <target> is the file or folder which should be watched. The target needs"
     echo "to be in a Git repository, or in the case of a folder, it may also be the top"
@@ -76,6 +77,7 @@ shelp () { # Print a message about how to use this script
     echo "                  is replaced by an empty string); the default message is:"
     echo "                  \"Gitwatch: auto-commit on change (%d)\""
     echo " -g <git-dir>     Git directory (Equals to <target>/.git if not specified)"
+    echo " -p               Enable pull"
     echo ""
     echo "As indicated, several conditions are only checked once at launch of the"
     echo "script. You can make changes to the repo state and configurations even while"
@@ -101,6 +103,7 @@ do
     case "${option}" in
         b) BRANCH=${OPTARG};;
         d) DATE_FMT=${OPTARG};;
+        p) ENABLE_PULL="true"; exit;;
         h) shelp; exit;;
         m) COMMITMSG=${OPTARG};;
         p|r) REMOTE=${OPTARG};;
@@ -177,7 +180,7 @@ fi
 
 # main program loop: wait for changes and commit them
 while true; do
-    $GIT pull -X theirs # initial pull to get current state
+    $ENABLE_PULL && $GIT pull -X theirs # initial pull to get current state
     $INCOMMAND # wait for changes
     sleep "$SLEEP_TIME" # wait some more seconds to give apps time to write out all changes
     if [ -n "$DATE_FMT" ]; then
@@ -188,13 +191,15 @@ while true; do
     $GIT --work-tree "$TARGETDIR" --git-dir "$GIT_DIR" commit "$GIT_COMMIT_ARGS" -m"$FORMATTED_COMMITMSG" # construct commit message and commit
 
     if [ -n "$PUSH_CMD" ]; then
-        $GIT fetch "$REMOTE"
-        timestamp=$(date +'%Y-%m-%dT%H:%M:%S%z');
-        for file in $(git diff --name-only --diff-filter=U); do
-            $GIT show ":1:${file}" > "${file}.${timestamp}".original
-            $GIT show ":2:${file}" > "${file}.${timestamp}".yours
-            $GIT show ":3:${file}" > "${file}.${timestamp}".theirs
-        done
+        if $ENABLE_PULL; then
+            $GIT fetch "$REMOTE"
+            timestamp=$(date +'%Y-%m-%dT%H:%M:%S%z');
+            for file in $(git diff --name-only --diff-filter=U); do
+                $GIT show ":1:${file}" > "${file}.${timestamp}".original
+                $GIT show ":2:${file}" > "${file}.${timestamp}".yours
+                $GIT show ":3:${file}" > "${file}.${timestamp}".theirs
+            done
+        fi
         $PUSH_CMD;
     fi
 done
