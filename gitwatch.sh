@@ -106,7 +106,7 @@ do
         p) ENABLE_PULL="true"; exit;;
         h) shelp; exit;;
         m) COMMITMSG=${OPTARG};;
-        p|r) REMOTE=${OPTARG};;
+        r) REMOTE=${OPTARG};;
         s) SLEEP_TIME=${OPTARG};;
         g) GIT_DIR=${OPTARG};;
         *) stderr "Error: Invalid option." ; exit 1;
