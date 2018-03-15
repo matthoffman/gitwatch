@@ -46,7 +46,7 @@ shelp () { # Print a message about how to use this script
     echo ""
     echo "Usage:"
     echo "${0##*/} [-s <secs>] [-d <fmt>] [-r <remote> [-b <branch>]]"
-    echo "         [-p] [-m <msg>] <target>"
+    echo "         [-g <git-dir>] [-p] [-m <msg>] <target>"
     echo ""
     echo "Where <target> is the file or folder which should be watched. The target needs"
     echo "to be in a Git repository, or in the case of a folder, it may also be the top"
