@@ -33,7 +33,7 @@
 #
 set -euo pipefail
 
-REMOTE="origin"
+REMOTE=""
 BRANCH="master"
 SLEEP_TIME=8
 DATE_FMT="+%Y-%m-%d %H:%M:%S"
