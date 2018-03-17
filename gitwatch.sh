@@ -187,8 +187,12 @@ while true; do
         FORMATTED_COMMITMSG="$(sed "s/%d/$(date "$DATE_FMT")/" <<< "$COMMITMSG")" # splice the formatted date-time into the commit message
     fi
     cd "$TARGETDIR" # CD into right dir
-    $GIT --work-tree "$TARGETDIR" --git-dir "$GIT_DIR" add "$GIT_ADD_ARGS" # add file(s) to index
-    $GIT --work-tree "$TARGETDIR" --git-dir "$GIT_DIR" commit "$GIT_COMMIT_ARGS" -m"$FORMATTED_COMMITMSG" # construct commit message and commit
+    # Get changed files count
+    CHANGED=$($GIT --work-tree "$TARGETDIR" --git-dir "$GIT_DIR" status --short | wc -l)
+    if [ "x$CHANGED" != "x0" ]; then # commit only if changed files still exist
+        $GIT --work-tree "$TARGETDIR" --git-dir "$GIT_DIR" add "$GIT_ADD_ARGS" # add file(s) to index
+        $GIT --work-tree "$TARGETDIR" --git-dir "$GIT_DIR" commit "$GIT_COMMIT_ARGS" -m"$FORMATTED_COMMITMSG" # construct commit message and commit
+    fi
 
     if [ -n "$PUSH_CMD" ]; then
         if $ENABLE_PULL; then
