@@ -45,7 +45,7 @@ shelp () { # Print a message about how to use this script
     echo "gitwatch - watch file or directory and git commit all changes as they happen"
     echo ""
     echo "Usage:"
-    echo "${0##*/} [-s <secs>] [-d <fmt>] [-r <remote> [-b <branch>]]"
+    echo "${0} [-s <secs>] [-d <fmt>] [-r <remote> [-b <branch>]]"
     echo "         [-g <git-dir>] [-p] [-m <msg>] <target>"
     echo ""
     echo "Where <target> is the file or folder which should be watched. The target needs"
@@ -77,7 +77,7 @@ shelp () { # Print a message about how to use this script
     echo "                  is replaced by an empty string); the default message is:"
     echo "                  \"Gitwatch: auto-commit on change (%d)\""
     echo " -g <git-dir>     Git directory (Equals to <target>/.git if not specified)"
-    echo " -p               Enable pull"
+    echo " -P               Enable pull before push"
     echo ""
     echo "As indicated, several conditions are only checked once at launch of the"
     echo "script. You can make changes to the repo state and configurations even while"
@@ -86,36 +86,37 @@ shelp () { # Print a message about how to use this script
     echo "It is therefore recommended to terminate the script before changing the repo's"
     echo "configuration and restarting it afterwards."
     echo ""
-    echo "By default, gitwatch tries to use the binaries \"git\" and \"inotifywait\","
-    echo "expecting to find them in the PATH (it uses 'which' to check this and  will"
-    echo "abort with an error if they cannot be found). If you want to use binaries"
-    echo "that are named differently and/or located outside of your PATH, you can define"
-    echo "replacements in the environment variables GW_GIT_BIN and GW_INW_BIN for git"
-    echo "and inotifywait, respectively."
+    echo "By default, gitwatch tries to use the binaries \"git\" and \"inotifywait\" (on"
+    echo "Linux) or \"fswatch\" (on OS X), expecting to find them in the PATH (it uses"
+    echo "'which' to check this and will abort with an error if they cannot be found). "
+    echo "If you want to use binaries that are named differently and/or located outside "
+    echo "of your PATH, you can define replacements in the environment variables"
+    echo "GW_GIT_BIN and GW_INW_BIN for git and inotifywait/fswatch, respectively."
 }
 
 stderr () {
     echo "$1" >&2
 }
 
-while getopts b:d:hm:p:r:s:g: option # Process command line options
+while getopts b:d:hPm:p:r:s:g: option # Process command line options
 do
     case "${option}" in
         b) BRANCH=${OPTARG};;
         d) DATE_FMT=${OPTARG};;
-        p) ENABLE_PULL="true"; exit;;
+        P) ENABLE_PULL="true";;
         h) shelp; exit;;
         m) COMMITMSG=${OPTARG};;
-        r) REMOTE=${OPTARG};;
+        p|r) REMOTE=${OPTARG};;
         s) SLEEP_TIME=${OPTARG};;
         g) GIT_DIR=${OPTARG};;
-        *) stderr "Error: Invalid option." ; exit 1;
+        *) shelp; exit 1;
     esac
 done
 
 shift $((OPTIND-1)) # Shift the input arguments, so that the input file (last arg) is $1 in the code below
 
 if [ $# -ne 1 ]; then # If no command line arguments are left (that's bad: no target was passed)
+    stderr "No directory argument present"
     shelp # print usage help
     exit # and exit
 fi
@@ -127,50 +128,29 @@ is_command () { # Tests for the availability of a command
 # if custom bin names are given for git or inotifywait, use those; otherwise fall back to "git" and "inotifywait"
 if [[ -z "${GW_GIT_BIN:-}" ]]; then GIT="git"; else GIT="$GW_GIT_BIN"; fi
 if [[ -z "${GW_INW_BIN:-}" ]]; then INW="inotifywait"; else INW="$GW_INW_BIN"; fi
+if [[ -z "${GW_RL_BIN:-}" ]]; then RL="readlink"; else INW="$GW_RL_BIN"; fi
 
 # if Mac, use fswatch
 if [ "$(uname)" == "Darwin" ]; then
   INW="fswatch"
+  RL="greadlink"
 fi
 
 # Check availability of selected binaries and die if not met
-for cmd in "$GIT" "$INW"; do
+for cmd in "$GIT" "$INW" "$RL"; do
 	is_command "$cmd" || { stderr "Error: Required command '$cmd' not found." ; exit 1; }
 done
 unset cmd
 
 # Expand the path to the target to absolute path
-if [ "$(uname)" == "Darwin" ]; then
-  # implement readlink -f in Darwin
-  # source: https://stackoverflow.com/questions/1055671/how-can-i-get-the-behavior-of-gnus-readlink-f-on-a-mac
-  TARGET_FILE=$1
+IN=$($RL -f "$1")
 
-  cd `dirname $TARGET_FILE`
-  TARGET_FILE=`basename $TARGET_FILE`
-
-  # Iterate down a (possible) chain of symlinks
-  while [ -L "$TARGET_FILE" ]
-  do
-    TARGET_FILE=`readlink $TARGET_FILE`
-    cd `dirname $TARGET_FILE`
-    TARGET_FILE=`basename $TARGET_FILE`
-  done
-
-  # Compute the canonicalized name by finding the physical path 
-  # for the directory we're in and appending the target file.
-  PHYS_DIR=`pwd -P`
-  RESULT=$PHYS_DIR/$TARGET_FILE
-  IN=$RESULT
-else
-  IN=$(readlink -f "$1")
-fi
 
 if [ -d "$1" ]; then # if the target is a directory
     TARGETDIR=$(sed -e "s/\/*$//" <<<"$IN") # dir to CD into before using git commands: trim trailing slash, if any
     INCOMMAND="$INW --exclude=\"^${TARGETDIR}/\.git\" -qqr -e close_write,move,delete,create $TARGETDIR" # construct inotifywait-commandline
     # Mac/fswatch only supports watching paths
     if [ "$(uname)" == "Darwin" ]; then
-      echo "$TARGETDIR"
       INCOMMAND="$INW -1 -r -x --exclude .DS_Store --exclude .git --event Created --event Removed --event MovedTo --event MovedFrom --event Renamed --event Updated $TARGETDIR"
     fi
     GIT_ADD_ARGS="." # add "." (CWD) recursively to index
