@@ -22,7 +22,7 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #############################################################################
 #
-#   Idea and original code taken from http://stackoverflow.com/a/965274 
+#   Idea and original code taken from http://stackoverflow.com/a/965274
 #       (but heavily modified by now)
 #
 #   Requires the command 'inotifywait' to be available, which is part of
@@ -31,19 +31,22 @@
 #   Will check the availability of both commands using the `which` command
 #   and will abort if either command (or `which`) is not found.
 #
+set -euo pipefail
 
 REMOTE=""
-BRANCH=""
-SLEEP_TIME=2
+BRANCH="master"
+SLEEP_TIME=8
 DATE_FMT="+%Y-%m-%d %H:%M:%S"
-COMMITMSG="Scripted auto-commit on change (%d) by gitwatch.sh"
+COMMITMSG="Gitwatch: auto-commit on change (%d)"
+GIT_DIR=""
+ENABLE_PULL="false"
 
 shelp () { # Print a message about how to use this script
     echo "gitwatch - watch file or directory and git commit all changes as they happen"
     echo ""
     echo "Usage:"
     echo "${0##*/} [-s <secs>] [-d <fmt>] [-r <remote> [-b <branch>]]"
-    echo "          [-m <msg>] <target>"
+    echo "         [-g <git-dir>] [-p] [-m <msg>] <target>"
     echo ""
     echo "Where <target> is the file or folder which should be watched. The target needs"
     echo "to be in a Git repository, or in the case of a folder, it may also be the top"
@@ -68,18 +71,20 @@ shelp () { # Print a message about how to use this script
     echo "                    'git push <remote> <current branch>:<branch>'  where"
     echo "                    <current branch> is the target of HEAD (at launch)"
     echo "                  if no remote was define with -r, this option has no effect"
-    echo " -m <msg>         the commit message used for each commit; all occurences of"
+    echo " -m <msg>         the commit message used for each commit; all occurrences of"
     echo "                  %d in the string will be replaced by the formatted date/time"
     echo "                  (unless the <fmt> specified by -d is empty, in which case %d"
     echo "                  is replaced by an empty string); the default message is:"
-    echo "                  \"Scripted auto-commit on change (%d) by gitwatch.sh\""
+    echo "                  \"Gitwatch: auto-commit on change (%d)\""
+    echo " -g <git-dir>     Git directory (Equals to <target>/.git if not specified)"
+    echo " -p               Enable pull"
     echo ""
     echo "As indicated, several conditions are only checked once at launch of the"
     echo "script. You can make changes to the repo state and configurations even while"
     echo "the script is running, but that may lead to undefined and unpredictable (even"
     echo "destructive) behavior!"
-    echo "It is therefore recommended to terminate the script before changin the repo's"
-    echo "config and restarting it afterwards."
+    echo "It is therefore recommended to terminate the script before changing the repo's"
+    echo "configuration and restarting it afterwards."
     echo ""
     echo "By default, gitwatch tries to use the binaries \"git\" and \"inotifywait\","
     echo "expecting to find them in the PATH (it uses 'which' to check this and  will"
@@ -90,18 +95,21 @@ shelp () { # Print a message about how to use this script
 }
 
 stderr () {
-    echo $1 >&2
+    echo "$1" >&2
 }
 
-while getopts b:d:hm:p:r:s: option # Process command line options 
-do 
-    case "${option}" in 
+while getopts b:d:hm:p:r:s:g: option # Process command line options
+do
+    case "${option}" in
         b) BRANCH=${OPTARG};;
         d) DATE_FMT=${OPTARG};;
+        p) ENABLE_PULL="true"; exit;;
         h) shelp; exit;;
         m) COMMITMSG=${OPTARG};;
-        p|r) REMOTE=${OPTARG};;
+        r) REMOTE=${OPTARG};;
         s) SLEEP_TIME=${OPTARG};;
+        g) GIT_DIR=${OPTARG};;
+        *) stderr "Error: Invalid option." ; exit 1;
     esac
 done
 
@@ -113,12 +121,12 @@ if [ $# -ne 1 ]; then # If no command line arguments are left (that's bad: no ta
 fi
 
 is_command () { # Tests for the availability of a command
-	which $1 &>/dev/null
+	which "$1" &>/dev/null
 }
 
 # if custom bin names are given for git or inotifywait, use those; otherwise fall back to "git" and "inotifywait"
-if [ -z "$GW_GIT_BIN" ]; then GIT="git"; else GIT="$GW_GIT_BIN"; fi
-if [ -z "$GW_INW_BIN" ]; then INW="inotifywait"; else INW="$GW_INW_BIN"; fi
+if [[ -z "${GW_GIT_BIN:-}" ]]; then GIT="git"; else GIT="$GW_GIT_BIN"; fi
+if [[ -z "${GW_INW_BIN:-}" ]]; then INW="inotifywait"; else INW="$GW_INW_BIN"; fi
 
 # if Mac, use fswatch
 if [ "$(uname)" == "Darwin" ]; then
@@ -127,7 +135,7 @@ fi
 
 # Check availability of selected binaries and die if not met
 for cmd in "$GIT" "$INW"; do
-	is_command $cmd || { stderr "Error: Required command '$cmd' not found." ; exit 1; }
+	is_command "$cmd" || { stderr "Error: Required command '$cmd' not found." ; exit 1; }
 done
 unset cmd
 
@@ -157,19 +165,17 @@ else
   IN=$(readlink -f "$1")
 fi
 
-if [ -d $1 ]; then # if the target is a directory
+if [ -d "$1" ]; then # if the target is a directory
     TARGETDIR=$(sed -e "s/\/*$//" <<<"$IN") # dir to CD into before using git commands: trim trailing slash, if any
-    INCOMMAND="$INW --exclude=\"^${TARGETDIR}/.git\" -qqr -e close_write,move,delete,create $TARGETDIR" # construct inotifywait-commandline
-    
+    INCOMMAND="$INW --exclude=\"^${TARGETDIR}/\.git\" -qqr -e close_write,move,delete,create $TARGETDIR" # construct inotifywait-commandline
     # Mac/fswatch only supports watching paths
     if [ "$(uname)" == "Darwin" ]; then
       echo "$TARGETDIR"
       INCOMMAND="$INW -1 $TARGETDIR"
     fi
-    
     GIT_ADD_ARGS="." # add "." (CWD) recursively to index
     GIT_COMMIT_ARGS="-a" # add -a switch to "commit" call just to be sure
-elif [ -f $1 ]; then # if the target is a single file
+elif [ -f "$1" ]; then # if the target is a single file
     TARGETDIR=$(dirname "$IN") # dir to CD into before using git commands: extract from file name
     INCOMMAND="$INW -qq -e close_write,move,delete $IN" # construct inotifywait-commandline
     GIT_ADD_ARGS="$IN" # add only the selected file to index
@@ -179,21 +185,23 @@ else
     exit 1
 fi
 
+if [ -z "$GIT_DIR" ]; then GIT_DIR="$TARGETDIR/.git"; fi
+if [ ! -d "$GIT_DIR" ]; then echo "$GIT_DIR is not a directory"; exit 1; fi
+
 # Check if commit message needs any formatting (date splicing)
 if ! grep "%d" > /dev/null <<< "$COMMITMSG"; then # if commitmsg didnt contain %d, grep returns non-zero
     DATE_FMT="" # empty date format (will disable splicing in the main loop)
     FORMATTED_COMMITMSG="$COMMITMSG" # save (unchanging) commit message
 fi
 
-cd $TARGETDIR # CD into right dir
+cd "$TARGETDIR" # CD into right dir
 
 if [ -n "$REMOTE" ]; then # are we pushing to a remote?
     if [ -z "$BRANCH" ]; then # Do we have a branch set to push to ?
         PUSH_CMD="$GIT push $REMOTE" # Branch not set, push to remote without a branch
     else
         # check if we are on a detached HEAD
-        HEADREF=$(git symbolic-ref HEAD 2> /dev/null)
-        if [ $? -eq 0 ]; then # HEAD is not detached
+        if HEADREF=$(git symbolic-ref HEAD 2> /dev/null); then # HEAD is not detached
             PUSH_CMD="$GIT push $REMOTE $(sed "s_^refs/heads/__" <<< "$HEADREF"):$BRANCH"
         else # HEAD is detached
             PUSH_CMD="$GIT push $REMOTE $BRANCH"
@@ -205,14 +213,30 @@ fi
 
 # main program loop: wait for changes and commit them
 while true; do
+    $ENABLE_PULL && $GIT pull -X theirs # initial pull to get current state
     $INCOMMAND # wait for changes
-    sleep $SLEEP_TIME # wait some more seconds to give apps time to write out all changes
+    sleep "$SLEEP_TIME" # wait some more seconds to give apps time to write out all changes
     if [ -n "$DATE_FMT" ]; then
         FORMATTED_COMMITMSG="$(sed "s/%d/$(date "$DATE_FMT")/" <<< "$COMMITMSG")" # splice the formatted date-time into the commit message
     fi
-    cd $TARGETDIR # CD into right dir
-    $GIT add $GIT_ADD_ARGS # add file(s) to index
-    $GIT commit $GIT_COMMIT_ARGS -m"$FORMATTED_COMMITMSG" # construct commit message and commit
+    cd "$TARGETDIR" # CD into right dir
+    # Get changed files count
+    CHANGED=$($GIT --work-tree "$TARGETDIR" --git-dir "$GIT_DIR" status --short | wc -l)
+    if [ "x$CHANGED" != "x0" ]; then # commit only if changed files still exist
+        $GIT --work-tree "$TARGETDIR" --git-dir "$GIT_DIR" add "$GIT_ADD_ARGS" # add file(s) to index
+        $GIT --work-tree "$TARGETDIR" --git-dir "$GIT_DIR" commit "$GIT_COMMIT_ARGS" -m"$FORMATTED_COMMITMSG" # construct commit message and commit
+    fi
 
-    if [ -n "$PUSH_CMD" ]; then $PUSH_CMD; fi
+    if [ -n "$PUSH_CMD" ]; then
+        if $ENABLE_PULL; then
+            $GIT fetch "$REMOTE"
+            timestamp=$(date +'%Y-%m-%dT%H:%M:%S%z');
+            for file in $(git diff --name-only --diff-filter=U); do
+                $GIT show ":1:${file}" > "${file}.${timestamp}".original
+                $GIT show ":2:${file}" > "${file}.${timestamp}".yours
+                $GIT show ":3:${file}" > "${file}.${timestamp}".theirs
+            done
+        fi
+        $PUSH_CMD;
+    fi
 done
