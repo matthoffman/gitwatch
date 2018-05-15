@@ -171,11 +171,16 @@ if [ -d "$1" ]; then # if the target is a directory
     # Mac/fswatch only supports watching paths
     if [ "$(uname)" == "Darwin" ]; then
       echo "$TARGETDIR"
-      INCOMMAND="$INW -1 $TARGETDIR"
+      INCOMMAND="$INW -1 -r -x --exclude .DS_Store --exclude .git --event Created --event Removed --event MovedTo --event MovedFrom --event Renamed --event Updated $TARGETDIR"
     fi
     GIT_ADD_ARGS="." # add "." (CWD) recursively to index
     GIT_COMMIT_ARGS="-a" # add -a switch to "commit" call just to be sure
 elif [ -f "$1" ]; then # if the target is a single file
+    if [ "$(uname)" == "Darwin" ]; then
+        echo "gitwatch only supports watching directories on OS X"
+        exit 1
+    fi
+
     TARGETDIR=$(dirname "$IN") # dir to CD into before using git commands: extract from file name
     INCOMMAND="$INW -qq -e close_write,move,delete $IN" # construct inotifywait-commandline
     GIT_ADD_ARGS="$IN" # add only the selected file to index

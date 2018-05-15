@@ -1,6 +1,10 @@
 # gitwatch
 
 A bash script to watch a file or folder and commit changes to a git repo
+## Acknowledgements
+
+Gitwatch was originally written by [Patrick Lehner](https://github.com/nevik), with modifications and contributions by Matthew McGowan, Dominik D. Geyer, and [Andrey Astafiev](https://github.com/elnull). Mac support was added by [prem-cascadeo](https://github.com/prem-cascadeo/gitwatch) and [Jens Plümer](https://github.com/jphavoc/gitwatch).
+
 
 ## What to use it for?
 That's really up to you, but here are some examples:
@@ -34,9 +38,22 @@ $ [sudo] bpkg install -g nevik/gitwatch
 ```
 
 ## Requirements
-To run this script, you must have installed and globally available:
+
+### Linux: 
+To run this script on Linux, you must have installed and globally available:
 * `git` ( [git/git](https://github.com/git/git) | http://www.git-scm.com )
 * `inotifywait` (part of **inotify-tools**: [rvoicilas/inotify-tools](https://github.com/rvoicilas/inotify-tools) )
+
+### Mac:
+On Mac, since `inotifywait` is not available, the script uses the `fswatch` utility instead. Note that due to limitations in `fswatch` (actually, in the underlying FS events it is using), `gitwatch` can only watch directories on OS X. 
+The script also depends on the `greadlink` (GNU readlink) utility, which is provided by the `coreutils` package in brew.
+
+The requirements can be installed using the package manager `brew`:
+* `brew install git`
+* `brew install fswatch`
+* `brew install coreutils` 
+
+
 
 ## What it does
 When you start the script, it prepares some variables and checks if the file [a] or directory [b] given as input really exists.<br />
@@ -68,4 +85,4 @@ Please also note that if either of the paths involved (script or target) contain
 ## Other Articles
 
 ### On the Gitwatch Wiki
-* [How to install `gitwatch` as a Debian service with `supervisord`](https://github.com/nevik/gitwatch/wiki/gitwatch-as-a-service-on-Debian-with-supervisord)
+* [How to install `gitwatch` as a Debian service with `supervisord`](https://github.com/gitwatch/gitwatch/wiki/gitwatch-as-a-service-on-Debian-with-supervisord)
